@@ -30,6 +30,33 @@ function maskSecret(value) {
   return `${value.slice(0, 4)}...${value.slice(-4)}`
 }
 
+function redact(value) {
+  if (Array.isArray(value)) {
+    return value.map(item => redact(item))
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, entry]) => {
+      if (isSensitiveKey(key)) return [key, '[REDACTED]']
+      return [key, redact(entry)]
+    }))
+  }
+  if (typeof value === 'string') {
+    return value
+      .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [REDACTED]')
+      .replace(/sk-[A-Za-z0-9._-]+/g, 'sk-[REDACTED]')
+  }
+  return value
+}
+
+function isSensitiveKey(key) {
+  return /^(authorization|key|apiKey|token|managementApiSecret|credentials)$/i.test(key)
+}
+
+function bodyPreview(body) {
+  const text = typeof body === 'string' ? body : JSON.stringify(redact(body))
+  return text.length > 500 ? `${text.slice(0, 500)}...` : text
+}
+
 function dryRun(label, extra = {}) {
   console.log(JSON.stringify({
     command: label,
@@ -61,16 +88,19 @@ async function request(path, options = {}) {
 
 async function snapshot() {
   if (args['dry-run']) return dryRun('snapshot')
-  const [health, proxy, config, providers, accounts, sessions, logs] = await Promise.all([
+  const [health, proxy, config, providers, accounts, sessions] = await Promise.all([
     fetch(`${baseUrl}/health`).then(async response => ({ status: response.status, body: await response.text() })),
     request('/v0/management/proxy/status'),
     request('/v0/management/config'),
     request('/v0/management/providers/'),
     request('/v0/management/accounts'),
     request('/v0/management/sessions'),
-    request('/v0/management/logs?type=request&limit=20'),
   ])
-  console.log(JSON.stringify({ health, proxy, config, providers, accounts, sessions, logs }, null, 2))
+  const output = { health, proxy, config, providers, accounts, sessions }
+  if (args['include-logs']) {
+    output.logs = await request('/v0/management/logs?type=request&limit=20')
+  }
+  console.log(JSON.stringify(redact(output), null, 2))
 }
 
 async function createApiKey() {
@@ -83,6 +113,7 @@ async function createApiKey() {
     }),
   })
   if (!result.ok) throw new Error(`create-api-key failed: ${result.status}`)
+  console.error('Warning: create-api-key prints a one-time API key. Do not write this output to durable logs.')
   console.log(JSON.stringify({
     id: result.body.data.id,
     key: result.body.data.key,
@@ -104,6 +135,9 @@ async function restoreToolConfig() {
     method: 'PUT',
     body: JSON.stringify({ value }),
   })
+  if (!result.ok) {
+    throw new Error(`restore-tool-config failed: ${result.status} ${bodyPreview(result.body)}`)
+  }
   console.log(JSON.stringify(result, null, 2))
 }
 

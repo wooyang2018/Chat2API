@@ -13,6 +13,20 @@ Use this skill to replay fixture scenarios for clients such as Cherry Studio, ge
 - Validate stream and non-stream behavior separately.
 - Use profiles for client-specific prompt-protocol expectations.
 
-## Planned Script
+## Commands
 
-A later implementation task adds `scripts/replay-client-fixture.mjs`. Until then, use this Skill as the documented boundary and rules for that capability.
+```bash
+CHAT2API_API_KEY=sk_xxx \
+node skills/chat2api-tool-client-replay/scripts/replay-client-fixture.mjs \
+  --fixture backup/har/cherry-studio-fixture.json \
+  --profile cherry-studio \
+  --model deepseek-v4-flash
+```
+
+Use `--dry-run` to check profile, model, and fixture selection without live requests. If the fixture file exists, dry-run parses the fixture schema and reports `fixtureExists` plus `scenarioCount`; if it is missing, dry-run still exits successfully with `fixtureExists: false`.
+
+## Profiles
+
+- `cherry-studio`: Cherry Studio headers and visible prompt-tool-use expectations.
+- `openai-tools`: generic OpenAI-compatible tool-calling expectations.
+- `custom-har`: empty client headers for replaying sanitized HAR-derived fixtures.

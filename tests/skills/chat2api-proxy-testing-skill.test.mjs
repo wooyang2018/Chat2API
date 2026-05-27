@@ -36,6 +36,12 @@ const skillPaths = [
 ]
 
 const focusedSkillFiles = skillPaths.filter(({ name }) => name !== 'chat2api-proxy-testing').map(({ file }) => file)
+const implementedScriptPaths = [
+  'skills/chat2api-management-api/scripts/management-api.mjs',
+  'skills/chat2api-har-tool-fixture/scripts/extract-har-fixtures.mjs',
+  'skills/chat2api-tool-client-replay/scripts/replay-client-fixture.mjs',
+  'skills/chat2api-provider-model-matrix/scripts/run-model-matrix.mjs',
+]
 
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
@@ -52,10 +58,14 @@ test('versioned Chat2API testing skills exist and have trigger-only descriptions
   }
 })
 
-test('focused skill docs do not reference scripts as active instructions', () => {
+test('focused skill docs reference implemented script paths only', () => {
   for (const file of focusedSkillFiles) {
     const text = fs.readFileSync(file, 'utf8')
-    assert.doesNotMatch(text, /Use `scripts\//, file)
+    assert.doesNotMatch(text, /Planned Script/, file)
+  }
+
+  for (const file of implementedScriptPaths) {
+    assert.equal(fs.existsSync(file), true, file)
   }
 })
 
@@ -65,4 +75,10 @@ test('proxy testing skill delegates focused responsibilities', () => {
   assert.match(text, /chat2api-har-tool-fixture/)
   assert.match(text, /chat2api-tool-client-replay/)
   assert.match(text, /chat2api-provider-model-matrix/)
+})
+
+test('versioned proxy testing skill warns against ignored local source of truth', () => {
+  const text = fs.readFileSync('skills/chat2api-proxy-testing/SKILL.md', 'utf8')
+  assert.match(text, /versioned source of truth/)
+  assert.match(text, /ignored \.codex/)
 })

@@ -23,3 +23,7 @@ Use this as the orchestration entry point.
 5. Replay scenarios.
 6. Inspect logs and sessions.
 7. Restore config and delete temporary test assets.
+
+## Source Of Truth
+
+The versioned source of truth is this `skills/chat2api-proxy-testing` directory plus the focused sibling skills. ignored .codex copies are local working copies only and must not be the only place where testing behavior is documented.

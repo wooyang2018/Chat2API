@@ -13,6 +13,15 @@ Use this skill when model coverage must follow the live `/v1/models` surface.
 - Use management API data for attribution and cleanup.
 - Keep provider fail-fast opt-in.
 
-## Planned Script
+## Commands
 
-A later implementation task adds `scripts/run-model-matrix.mjs`. Until then, use this Skill as the documented boundary and rules for that capability.
+```bash
+CHAT2API_BASE_URL=http://127.0.0.1:8080 \
+CHAT2API_MGMT_SECRET=mgmt_xxx \
+CHAT2API_API_KEY=sk_xxx \
+node skills/chat2api-provider-model-matrix/scripts/run-model-matrix.mjs \
+  --fixture backup/har/cherry-studio-fixture.json \
+  --profile cherry-studio
+```
+
+The default model source is `GET /v1/models`. Use `--provider`, `--model`, and `--fail-fast-provider N` to narrow live runs.

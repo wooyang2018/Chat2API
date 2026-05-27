@@ -28,3 +28,7 @@ CHAT2API_MGMT_SECRET=mgmt_xxx node skills/chat2api-management-api/scripts/manage
 ```
 
 Use `--dry-run` to verify command shape without network calls.
+
+`create-api-key` prints a one-time API key to stdout. Do not write this output to durable logs, transcripts, or shared artifacts.
+
+`snapshot` omits request logs by default. Use `snapshot --include-logs` only when logs are intentionally needed; included snapshot data is locally redacted before printing.
