@@ -1007,6 +1007,7 @@ export class RequestForwarder {
         messages: transformed.messages as any,
         stream: request.stream,
         temperature: request.temperature,
+        toolCallingPlan: transformed.plan,
       })
 
       const latency = Date.now() - startTime

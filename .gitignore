@@ -48,6 +48,7 @@ CLAUDE.md
 
 # Test
 coverage/
+tests/e2e/.minimax-token-cache.json
 
 # Misc
 *.pem

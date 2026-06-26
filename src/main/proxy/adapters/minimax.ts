@@ -20,6 +20,8 @@ import {
   createBaseChunk,
   ToolCallState 
 } from '../utils/streamToolHandler'
+import { ToolStreamParser } from '../toolCalling/ToolStreamParser'
+import type { ToolCallingPlan } from '../toolCalling/types'
 
 const AGENT_BASE_URL = 'https://agent.minimaxi.com'
 
@@ -78,6 +80,7 @@ interface ChatCompletionRequest {
   tools?: any[]
   tool_choice?: any
   chatId?: string
+  toolCallingPlan?: ToolCallingPlan
 }
 
 interface DeviceInfo {
@@ -627,7 +630,7 @@ export class MiniMaxAdapter {
         await this.deleteChat(chatId)
       } : undefined
       
-      const transStream = this.createPollingStream(chatId, deviceInfo, this.model, onEnd)
+      const transStream = this.createPollingStream(chatId, deviceInfo, this.model, onEnd, request.toolCallingPlan)
       return { 
         response: null, 
         stream: { session: null as any, stream: transStream as any }, 
@@ -711,7 +714,7 @@ export class MiniMaxAdapter {
     throw new Error(`No AI response after ${maxPolls} polls`)
   }
 
-  private createPollingStream(chatId: string, deviceInfo: DeviceInfo, model: string, onEnd?: (chatId: string) => Promise<void>): PassThrough {
+  private createPollingStream(chatId: string, deviceInfo: DeviceInfo, model: string, onEnd?: (chatId: string) => Promise<void>, toolCallingPlan?: ToolCallingPlan): PassThrough {
     const transStream = new PassThrough()
     const created = this.created
     let lastContent = ''
@@ -723,6 +726,7 @@ export class MiniMaxAdapter {
     let sentRole = false
     let sentThinkingRole = false
     let lastMsgId = ''
+    const toolStreamParser = toolCallingPlan?.shouldParseResponse ? new ToolStreamParser(toolCallingPlan) : undefined
     
     const poll = async () => {
       try {
@@ -810,19 +814,30 @@ export class MiniMaxAdapter {
               const newChunk = currentContent.substring(lastContent.length)
               
               const baseChunk = createBaseChunk(chatId.toString(), model, created)
-              const { chunks: outputChunks } = processStreamContent(
-                newChunk, 
-                toolCallState, 
-                baseChunk, 
-                !sentRole,
-                'minimax'
-              )
 
-              for (const outChunk of outputChunks) {
-                transStream.write(`data: ${JSON.stringify(outChunk)}\n\n`)
+              if (toolStreamParser) {
+                // Use new ToolStreamParser for tool call extraction
+                const outputChunks = toolStreamParser.push(newChunk, baseChunk, !sentRole)
+                for (const outChunk of outputChunks) {
+                  transStream.write(`data: ${JSON.stringify(outChunk)}\n\n`)
+                }
+                if (outputChunks.length > 0) sentRole = true
+              } else {
+                // Fallback to legacy stream tool handler
+                const { chunks: outputChunks } = processStreamContent(
+                  newChunk, 
+                  toolCallState, 
+                  baseChunk, 
+                  !sentRole,
+                  'minimax'
+                )
+
+                for (const outChunk of outputChunks) {
+                  transStream.write(`data: ${JSON.stringify(outChunk)}\n\n`)
+                }
+
+                if (outputChunks.length > 0) sentRole = true
               }
-
-              if (outputChunks.length > 0) sentRole = true
               
               lastContent = currentContent
             }
@@ -833,23 +848,45 @@ export class MiniMaxAdapter {
               console.log('[MiniMax] Stream completed - chat_status: 2, polls:', pollCount, 'content length:', lastContent.length, 'thinking length:', lastThinkingContent.length)
               
               const baseChunk = createBaseChunk(chatId.toString(), model, created)
-              const flushChunks = flushToolCallBuffer(toolCallState, baseChunk, 'minimax')
-              
-              for (const outChunk of flushChunks) {
-                transStream.write(`data: ${JSON.stringify(outChunk)}\n\n`)
+
+              if (toolStreamParser) {
+                // Flush remaining tool call buffer
+                const flushChunks = toolStreamParser.flush(baseChunk)
+                for (const outChunk of flushChunks) {
+                  transStream.write(`data: ${JSON.stringify(outChunk)}\n\n`)
+                }
+                const finishReason = toolStreamParser.hasEmittedToolCall() ? 'tool_calls' : 'stop'
+                
+                transStream.write(
+                  `data: ${JSON.stringify({
+                    id: chatId.toString(),
+                    model,
+                    object: 'chat.completion.chunk',
+                    choices: [{ index: 0, delta: {}, finish_reason: finishReason }],
+                    created,
+                  })}\n\n`
+                )
+              } else {
+                // Legacy flush
+                const flushChunks = flushToolCallBuffer(toolCallState, baseChunk, 'minimax')
+                
+                for (const outChunk of flushChunks) {
+                  transStream.write(`data: ${JSON.stringify(outChunk)}\n\n`)
+                }
+                
+                const finishReason = toolCallState.hasEmittedToolCall ? 'tool_calls' : 'stop'
+                
+                transStream.write(
+                  `data: ${JSON.stringify({
+                    id: chatId.toString(),
+                    model,
+                    object: 'chat.completion.chunk',
+                    choices: [{ index: 0, delta: {}, finish_reason: finishReason }],
+                    created,
+                  })}\n\n`
+                )
               }
               
-              const finishReason = toolCallState.hasEmittedToolCall ? 'tool_calls' : 'stop'
-              
-              transStream.write(
-                `data: ${JSON.stringify({
-                  id: chatId.toString(),
-                  model,
-                  object: 'chat.completion.chunk',
-                  choices: [{ index: 0, delta: {}, finish_reason: finishReason }],
-                  created,
-                })}\n\n`
-              )
               transStream.end('data: [DONE]\n\n')
               if (onEnd) {
                 onEnd(chatId).catch(err => console.error('[MiniMax] Failed to delete chat:', err))
